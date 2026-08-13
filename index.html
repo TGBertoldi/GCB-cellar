@@ -68,6 +68,7 @@
   .cellbtn{min-height:42px;border-radius:8px;border:1px solid var(--line);background:var(--ink);color:var(--mut);font-size:12px;font-family:var(--mono);cursor:pointer;display:flex;align-items:center;justify-content:center}
   .cellbtn.free{background:rgba(217,180,94,.10);border-color:#5a4a2e;color:var(--gold);font-weight:600}
   .cellbtn.taken{opacity:.3}
+  .cellbtn.occ{background:rgba(124,42,50,.22);border-color:#7C2A32;color:#D98A8A;font-weight:600}
   .depthbig{flex:1;padding:20px 0;border-radius:12px;border:1px solid var(--gold);background:rgba(217,180,94,.12);color:var(--gold);font-weight:600;font-size:15px;cursor:pointer}
   .depthbig.taken{border-color:var(--line);background:transparent;color:var(--mut);font-weight:400}
   /* telas largas (tablet/desktop): app mais largo e grade de cards / localizador lado a lado */
@@ -163,7 +164,7 @@ function rowsToWines(rows){
 /* ---------------- estado ---------------- */
 var S={ data:{wines:[],positions:[]}, loading:false, msg:"",
   q:"", fOpen:false, f:defFilters(), locate:null,
-  sheet:null, draft:null, picker:null };
+  sheet:null, draft:null, picker:null, finder:null };
 function defFilters(){ return {pais:"Todos",regiao:"Todas",tipo:"Todos",ordenar:"adega",vmin:0,vmax:1e9,smin:1980,smax:YEAR}; }
 
 function effectiveWines(){
@@ -182,7 +183,8 @@ var MOD={ A1:{x:16,y:26,w:130,h:118}, A2:{x:154,y:26,w:130,h:118}, B1:{x:16,y:20
 var CEN_A1={1:0.11,2:0.45,3:0.79}, CEN_A2={1:0.21,2:0.55,3:0.89};
 var E_SHELF={x:16,y:150,w:268,h:28};
 function modCols(k){ return k[0]==="A" ? (k==="A1"?[{c:1,w:.6,lat:1},{c:2,w:1},{c:3,w:1}]:[{c:1,w:1},{c:2,w:1},{c:3,w:.6,lat:1}]) : [1,2,3,4,5,6].map(function(c){return{c:c,w:1};}); }
-function cellarSVG(p,tap){
+function cellarSVG(p,tap,attr){
+  attr=attr||"data-pickmod";
   var s='<svg viewBox="0 0 300 344" width="100%" class="cellarmap"><defs><radialGradient id="cd" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#D9B45E" stop-opacity=".55"/><stop offset="100%" stop-color="#D9B45E" stop-opacity="0"/></radialGradient></defs>';
   s+='<rect x="8" y="12" width="284" height="324" rx="12" fill="none" stroke="#3A2A28" stroke-width="1.5"/>';
   s+='<line x1="150" y1="14" x2="150" y2="334" stroke="#3A2A28" stroke-width="1"/>';
@@ -199,7 +201,7 @@ function cellarSVG(p,tap){
   var eOn=(p&&p.isE);
   s+='<rect x="'+E_SHELF.x+'" y="'+E_SHELF.y+'" width="'+E_SHELF.w+'" height="'+E_SHELF.h+'" rx="4" fill="'+(eOn?"rgba(217,180,94,.14)":"#2C2320")+'" stroke="'+(eOn?"#D9B45E":"#3A2A28")+'" stroke-width="'+(eOn?1.5:.6)+'"/>';
   s+='<text x="150" y="'+(E_SHELF.y+E_SHELF.h/2+4)+'" text-anchor="middle" font-size="10" letter-spacing="3" fill="'+(eOn?"#D9B45E":"#93826F")+'" font-family="monospace">ESTANTE</text>';
-  if(tap){ ["A1","A2","B1","B2","B3"].forEach(function(k){ var m=MOD[k]; s+='<rect x="'+m.x+'" y="'+m.y+'" width="'+m.w+'" height="'+m.h+'" fill="transparent" data-pickmod="'+k+'" style="cursor:pointer"/>'; }); s+='<rect x="'+E_SHELF.x+'" y="'+E_SHELF.y+'" width="'+E_SHELF.w+'" height="'+E_SHELF.h+'" fill="transparent" data-pickmod="E" style="cursor:pointer"/>'; }
+  if(tap){ ["A1","A2","B1","B2","B3"].forEach(function(k){ var m=MOD[k]; s+='<rect x="'+m.x+'" y="'+m.y+'" width="'+m.w+'" height="'+m.h+'" fill="transparent" '+attr+'="'+k+'" style="cursor:pointer"/>'; }); s+='<rect x="'+E_SHELF.x+'" y="'+E_SHELF.y+'" width="'+E_SHELF.w+'" height="'+E_SHELF.h+'" fill="transparent" '+attr+'="E" style="cursor:pointer"/>'; }
   if(p&&!p.isE){ var m2=MOD[p.bloco], cen=(p.bloco==="A2"?CEN_A2:CEN_A1), rows=(p.alto?7:6); var mx=p.alto?m2.x+cen[p.C]*m2.w:m2.x+(p.C-0.5)*(m2.w/p.cols), my=m2.y+(p.L-0.5)*(m2.h/rows);
     s+='<circle cx="'+mx+'" cy="'+my+'" r="4" fill="#D9B45E"/><circle cx="'+mx+'" cy="'+my+'" r="8" fill="none" stroke="#D9B45E" stroke-width="1.4"><animate attributeName="r" values="8;20" dur="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".9;0" dur="1.6s" repeatCount="indefinite"/></circle>'; }
   return s+'</svg>';
@@ -253,6 +255,7 @@ function sortWines(a,ord){
   return a;
 }
 function regioesList(){ var s={}; effectiveWines().forEach(function(w){if(w.regiao)s[w.regiao]=1;}); return Object.keys(s).sort(); }
+function paisesList(){ var s={}; effectiveWines().forEach(function(w){var p=pais(w.regiao);if(p&&p!=="—")s[p]=1;}); return Object.keys(s).sort(); }
 function filtersHTML(f,open){
   if(!open) return '';
   var ord=[["adega","Organização da adega"],["nome","Nome (A–Z)"],["safra_nova","Safra (mais nova)"],["safra_velha","Safra (mais antiga)"],["valor_maior","Valor (maior)"],["valor_menor","Valor (menor)"]];
@@ -262,7 +265,7 @@ function filtersHTML(f,open){
   function sopts(list,val,all){var o='<option value="'+all+'"'+(val===all?' selected':'')+'>'+all+'</option>';return o+list.map(function(x){return '<option'+(x===val?' selected':'')+'>'+esc(x)+'</option>';}).join("");}
   var yrs="";for(var y=1980;y<=YEAR;y++)yrs+='<option value="'+y+'">'+y+'</option>';
   var h='<div class="fpanel">';
-  h+='<div style="display:flex;gap:12px"><div style="flex:1"><div class="flabel">País</div><div class="sel"><select data-f="pais">'+sopts(["Itália","França","Portugal","Espanha","Chile","Argentina","África do Sul"],f.pais,"Todos")+'</select></div></div>';
+  h+='<div style="display:flex;gap:12px"><div style="flex:1"><div class="flabel">País</div><div class="sel"><select data-f="pais">'+sopts(paisesList(),f.pais,"Todos")+'</select></div></div>';
   h+='<div style="flex:1"><div class="flabel">Região</div><div class="sel"><select data-f="regiao">'+sopts(regioesList(),f.regiao,"Todas")+'</select></div></div></div>';
   h+='<div style="display:flex;gap:12px;margin-top:14px"><div style="flex:1"><div class="flabel">Tipo</div><div class="sel"><select data-f="tipo">'+sopts(TIPOS,f.tipo,"Todos")+'</select></div></div>';
   h+='<div style="flex:1"><div class="flabel">Ordenar</div><div class="sel"><select data-f="ordenar">'+opts(ord,f.ordenar)+'</select></div></div></div>';
@@ -275,7 +278,7 @@ function filtersHTML(f,open){
 /* ---------------- tela principal ---------------- */
 function render(){
   if(!cfg().csvUrl){ return renderSettings(true); }
-  app.innerHTML='<div class="scroll" id="scroll">'+mainScreen()+'</div><button class="fab" data-add="1">＋ Adicionar</button>'+(S.locate?detailOverlay():'')+(S.sheet?editSheet():'')+(S.picker?pickerOverlay():'');
+  app.innerHTML='<div class="scroll" id="scroll">'+mainScreen()+'</div><button class="fab" data-add="1">＋ Adicionar</button>'+(S.locate?detailOverlay():'')+(S.sheet?editSheet():'')+(S.picker?pickerOverlay():'')+(S.finder?finderOverlay():'');
   wire();
 }
 function stat(v,k){ return '<div><div style="font-family:var(--serif);font-size:22px;color:var(--gold)">'+v+'</div><div class="eyebrow" style="font-size:10.5px">'+k+'</div></div>'; }
@@ -289,7 +292,8 @@ function mainScreen(){
   h+='<div class="status" style="margin-top:10px"><span class="dot" style="background:'+(S.msg?"var(--gold)":"var(--green)")+'"></span>'+(S.msg||("Coleção Gabriel Coimbra · "+stats.rot+" rótulos"))+' <button class="ghost" data-refresh="1" style="margin-left:auto;padding:5px 12px">↻ Atualizar</button></div>';
   h+='<div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap">'+stat(stats.rot,"rótulos")+stat(Object.keys(stats.pais).length,"países")+stat(Object.keys(stats.reg).length,"regiões")+stat(brl(stats.val),"em adega")+'</div>';
   h+='<div class="searchbar" style="margin-top:16px"><span class="muted">🔎</span><input id="q" placeholder="Buscar em qualquer campo" value="'+esc(S.q)+'"></div>';
-  h+='<div style="margin-top:12px"><button class="fbtn" data-fopen="1"><span>⚙ Filtros</span><span style="color:'+(S.fOpen?'var(--gold)':'var(--mut)')+'">'+(S.fOpen?"▲":"▼")+'</span></button>'+filtersHTML(S.f,S.fOpen)+'</div>';
+  h+='<div style="margin-top:10px"><button class="fbtn" data-findopen="1"><span>📍 Buscar vinho pela posição</span><span style="color:var(--mut)">▸</span></button></div>';
+  h+='<div style="margin-top:10px"><button class="fbtn" data-fopen="1"><span>⚙ Filtros</span><span style="color:'+(S.fOpen?'var(--gold)':'var(--mut)')+'">'+(S.fOpen?"▲":"▼")+'</span></button>'+filtersHTML(S.f,S.fOpen)+'</div>';
   h+='<div class="divider" style="margin-top:16px"></div><div class="muted" style="font-size:13px"><span style="color:var(--gold);font-weight:600">'+list.length+'</span> rótulos · '+brl(list.reduce(function(s,w){return s+toNum(w.valor);},0))+'</div>';
   h+='<div class="cardgrid">'; list.forEach(function(w){ h+=wineCard(w); }); h+='</div>';
   if(!list.length) h+='<div style="text-align:center;color:var(--mut);padding:30px">Nada encontrado.</div>';
@@ -394,6 +398,55 @@ function pickerOverlay(){
   }
   return h+'</div></div>';
 }
+function cellGridFind(bloco){
+  var occ=occupiedPos();
+  if(bloco==="E"){ var he='<div class="cellgrid" style="grid-template-columns:repeat('+E_COUNT+',1fr)">'; for(var en=1;en<=E_COUNT;en++){ var pe="E"+en; he+='<button class="cellbtn '+(occ[pe]?"occ":"free")+'" data-findpos="'+pe+'">E'+en+'</button>'; } return he+'</div>'; }
+  var cols=moduleCols(bloco), N=cols.length, R=blocoRows(bloco);
+  var h='<div class="cellgrid" style="grid-template-columns:26px repeat('+N+',1fr)"><div></div>';
+  cols.forEach(function(col){ h+='<div style="text-align:center;font-size:10px;font-family:var(--mono);color:'+(col.lat?"var(--gold)":"var(--mut)")+'">C'+col.c+(col.lat?"·lat":"")+'</div>'; });
+  for(var L=1;L<=R;L++){
+    h+='<div style="display:flex;align-items:center;justify-content:center;font-size:10px;font-family:var(--mono);color:var(--mut)">L'+L+'</div>';
+    cols.forEach(function(col){
+      if(bloco[0]==="A" && !col.lat){
+        var used=[1,2,3].filter(function(pp){return !!occ[bloco+"L"+L+"C"+col.c+"P"+pp];}).length;
+        h+='<button class="cellbtn '+(used>0?"occ":"free")+'" data-finddeep="'+L+','+col.c+'">'+(used>0?used+"/3":"livre")+'</button>';
+      } else {
+        var pos=bloco+"L"+L+"C"+col.c;
+        h+='<button class="cellbtn '+(occ[pos]?"occ":"free")+'" data-findpos="'+pos+'">'+(occ[pos]?"●":"○")+'</button>';
+      }
+    });
+  }
+  return h+'</div>';
+}
+function finderOverlay(){
+  var pk=S.finder||{};
+  var h='<div class="overlay" style="z-index:50"><div style="display:flex;align-items:center;justify-content:space-between;padding:calc(22px + env(safe-area-inset-top)) 20px 8px"><span class="eyebrow">Buscar vinho pela posição</span><button class="xbtn" data-findclose="1">✕</button></div><div class="scroll" style="padding:0 16px 24px">';
+  if(pk.empty){
+    h+='<div style="text-align:center;margin:30px 0"><div class="mono" style="font-size:15px;color:var(--gold)">'+esc(posLabel(pk.empty))+'</div><div class="muted" style="margin-top:10px;font-size:14px">Nenhum vinho guardado aqui.</div>';
+    h+='<button class="primary" style="margin-top:20px" data-findadd="'+esc(pk.empty)+'">＋ Adicionar vinho nessa posição</button>';
+    h+='<button class="ghost" style="width:100%;margin-top:10px;padding:12px" data-findback="1">‹ Escolher outro local</button></div>';
+  } else if(!pk.bloco){
+    h+='<div style="text-align:center;color:var(--mut);font-size:14px;margin:6px 0 8px">Toque na estante para ver o que há lá</div>';
+    h+=cellarSVG(null,true,"data-findmod");
+  } else if(pk.cell){
+    var L=pk.cell.L,C=pk.cell.C,occ=occupiedPos();
+    h+='<div style="text-align:center;margin:6px 0 14px"><div style="font-family:var(--serif);font-size:20px">'+pk.bloco+' · L'+L+' · C'+C+'</div><div class="muted" style="font-size:13px">Escolha a profundidade</div></div>';
+    h+='<div style="display:flex;gap:10px">';
+    ["Frente","Meio","Fundo"].forEach(function(nm,i){ var code=pk.bloco+"L"+L+"C"+C+"P"+(i+1); var tk=occ[code]; h+='<button class="depthbig'+(tk?"":" taken")+'" data-finddepth="'+(i+1)+'">'+nm+'<div class="mono" style="font-size:11px;opacity:.7">P'+(i+1)+(tk?" · com vinho":" · vazio")+'</div></button>'; });
+    h+='</div><button class="ghost" style="width:100%;margin-top:16px;padding:12px" data-findback="1">‹ Voltar às posições</button>';
+  } else {
+    h+='<div style="text-align:center;margin:6px 0 12px"><span style="font-family:var(--serif);font-size:20px">'+pk.bloco+'</span> <span class="muted">— toque numa posição</span></div>';
+    h+=cellGridFind(pk.bloco);
+    h+='<div class="muted" style="font-size:11.5px;margin-top:10px;text-align:center">● = com vinho · ○ = vazio</div>';
+    h+='<button class="ghost" style="width:100%;margin-top:12px;padding:12px" data-findback="1">‹ Trocar estante</button>';
+  }
+  return h+'</div></div>';
+}
+function resolveFinder(pos){
+  var w=effectiveWines().filter(function(x){return x.pos===pos;})[0];
+  if(w){ S.finder=null; S.locate=w; render(); }
+  else { S.finder.empty=pos; render(); }
+}
 function renderSettings(force){
   var c=cfg();
   app.innerHTML='<div class="scroll safe-top" style="padding:calc(24px + env(safe-area-inset-top)) 20px 20px;max-width:640px;margin:0 auto"><h1 style="font-size:26px">Configuração</h1><div class="muted" style="font-size:13px;margin:8px 0 16px">Cole os endereços da sua planilha para o app ler e gravar na Página 1.</div>'+
@@ -474,6 +527,14 @@ function wire(){
   document.querySelectorAll("[data-pickdepth]").forEach(function(b){b.onclick=function(){S.draft.pos=S.picker.bloco+"L"+S.picker.cell.L+"C"+S.picker.cell.C+"P"+b.getAttribute("data-pickdepth");S.picker=null;render();};});
   document.querySelectorAll("[data-pickback]").forEach(function(b){b.onclick=function(){if(S.picker.cell)S.picker.cell=null;else S.picker.bloco=null;render();};});
   document.querySelectorAll("[data-pickclose]").forEach(function(b){b.onclick=function(){S.picker=null;render();};});
+  document.querySelectorAll("[data-findopen]").forEach(function(b){b.onclick=function(){S.finder={bloco:null,cell:null};render();};});
+  document.querySelectorAll("[data-findmod]").forEach(function(b){b.onclick=function(){var k=b.getAttribute("data-findmod");S.finder.bloco=k;S.finder.cell=null;render();};});
+  document.querySelectorAll("[data-findpos]").forEach(function(b){b.onclick=function(){resolveFinder(b.getAttribute("data-findpos"));};});
+  document.querySelectorAll("[data-finddeep]").forEach(function(b){b.onclick=function(){var a=b.getAttribute("data-finddeep").split(",");S.finder.cell={L:+a[0],C:+a[1]};render();};});
+  document.querySelectorAll("[data-finddepth]").forEach(function(b){b.onclick=function(){resolveFinder(S.finder.bloco+"L"+S.finder.cell.L+"C"+S.finder.cell.C+"P"+b.getAttribute("data-finddepth"));};});
+  document.querySelectorAll("[data-findback]").forEach(function(b){b.onclick=function(){if(S.finder.empty)S.finder.empty=null;else if(S.finder.cell)S.finder.cell=null;else S.finder.bloco=null;render();};});
+  document.querySelectorAll("[data-findclose]").forEach(function(b){b.onclick=function(){S.finder=null;render();};});
+  document.querySelectorAll("[data-findadd]").forEach(function(b){b.onclick=function(){var p=b.getAttribute("data-findadd");S.finder=null;S.draft={tipo:"Tinto",vinho:"",regiao:"",safra:"",uvas:"",valor:"",janela:"",pos:p,oldPos:""};S.sheet=true;render();};});
   document.querySelectorAll("[data-aicg]").forEach(function(b){b.onclick=function(){window.open("https://chatgpt.com/?hints=search&q="+b.getAttribute("data-aicg"),"_blank");};});
   document.querySelectorAll("[data-aipx]").forEach(function(b){b.onclick=function(){window.open("https://www.perplexity.ai/search?q="+b.getAttribute("data-aipx"),"_blank");};});
 }
